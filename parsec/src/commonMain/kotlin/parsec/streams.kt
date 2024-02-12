@@ -1,7 +1,6 @@
 package parsec
 
 import arrow.core.*
-import java.util.NoSuchElementException
 
 object UnexpectedEOS: Exception("Unexpected end of stream")
 
@@ -21,7 +20,7 @@ class StreamIterator<C>(str: Stream<C>): Iterator<C> {
     private var _cursor = str
     override fun hasNext(): Boolean = _cursor.next().isSome()
     override fun next(): C = when (val n = _cursor.next()) {
-        None    -> throw NoSuchElementException()
+        None    -> throw UnexpectedEOS
         is Some -> {
             _cursor = n.value.second
             n.value.first

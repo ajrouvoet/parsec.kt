@@ -1,4 +1,4 @@
-package parsec.parsec
+package parsec
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import parsec.*
@@ -109,11 +109,11 @@ class ParsecTest {
     }
 
     @Test
-    fun `choose does not rewind`() {
+    fun `choose rewinds`() {
         val parser = choice(exactly('a'), exactly('b'), exactly('c'))
 
         parser.expectParse("a")
-        parser.expectError("b")
+        parser.expectParse("b")
         parser.expectError("d")
     }
 

@@ -1,6 +1,7 @@
 package parsec
 
 import arrow.core.Tuple4
+import kotlin.jvm.JvmName
 
 @JvmName("and2")
 operator fun <C,T,S> Parsec<C,T>.times(that: Parsec<C, S>) =
