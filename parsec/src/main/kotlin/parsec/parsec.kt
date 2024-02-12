@@ -76,14 +76,22 @@ fun <C, T> Parsec<C, T>.mapError(onErr: (String) -> String): Parsec<C, T> = Pars
     }
 }
 
-fun <C, T> Parsec<C,T>.filter(onErr: (T) -> String, pred: (T) -> Boolean) = Parsec { s ->
-    when (val res = this@filter.run(s)) {
+fun <C, S, T> Parsec<C,T>.collect(pred: (T) -> Either<String, S>): Parsec<C, S> = Parsec { s ->
+    when (val res = this@collect.run(s)) {
         is Result.Err -> res
         is Result.Ok  ->
-            if (pred(res.value)) res
-            else Result.Err(res.remainder, onErr(res.value))
+            when (val x = pred(res.value)) {
+                is Either.Right -> Result.Ok(res.remainder, x.value)
+                is Either.Left  -> Result.Err(res.remainder, x.value)
+            }
     }
 }
+
+fun <C, T> Parsec<C,T>.filter(onErr: (T) -> String, pred: (T) -> Boolean): Parsec<C, T> =
+    collect { it: T ->
+        if (pred(it)) it.right()
+        else onErr(it).left()
+    }
 
 /**
  * Monadic action: value-dependent sequencing of parsers.
@@ -138,6 +146,14 @@ fun <C> match(pred: (C) -> Boolean, onErr: (C) -> String = {"Unexpected input."}
     any<C>().filter(onErr, pred)
 
 /**
+ * A parser that consumes a single input element and succeeds if
+ * that element satisfies the predicate [pred].
+ * If it doesn't, then an error is produced by calling [onErr] on the consumed element.
+ */
+fun <C, T> match(pred: (C) -> Either<String,T>): Parsec<C, T> =
+    any<C>().collect(pred)
+
+/**
  * Parser that sequences [this] and [that].
  * If either fails, the produced parser fails.
  * If both succeed, then both their results are given.
@@ -162,6 +178,20 @@ fun <C,T> Parsec<C,T>.many(prepend: List<T> = listOf()): Parsec<C, List<T>> = th
 }
 
 /**
+ * Like [many], but parses [this] separated by [sep].
+ */
+fun <C, S, T> Parsec<C, S>.separatedBy(sep: Parsec<C, T>): Parsec<C, List<S>> = (
+        // cons
+        ( this
+        * sep
+        * rec { this.separatedBy(sep) }
+        ) .map { (hd, _, tl) -> hd.prependTo(tl) }
+    ) or (
+        // singleton
+        this .map { listOf(it) }
+    )
+
+/**
  * Parse [this] until [stop] succeeds.
  * If [this] fails, then the failure is propagated.
  */
@@ -176,7 +206,7 @@ fun <C,T> Parsec<C,T>.repeat(n: Int, prepend: List<T> = listOf()): Parsec<C, Lis
     if (n == 0) pure(prepend)
     else this.flatMap { t -> this.repeat(n - 1, prepend + t) }
 
-fun <C> exactly(tk: C): Parsec<C, C> = match({ it == tk }) { "Expected $tk, got $it" }
+fun <C> exactly(tk: C): Parsec<C, C> = match { if (it == tk) tk.right() else "Expected $tk, got $it".left() }
 
 fun <C> exactly(tks: List<C>): Parsec<C, List<C>> = any<C>(tks.size)
     .mapError { "Expected $tks, but stream ended prematurely."}

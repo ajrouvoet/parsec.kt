@@ -88,7 +88,8 @@ class ParsecTest {
         val parser = any<Char>().until(exactly(listOf('!', '!')))
 
         parser.expectParse("hi there! again!!") {
-            assertEquals("hi there! again", value.joinToString(""))
+            val (els, sep) = value
+            assertEquals("hi there! again", els.joinToString(""))
             assertEquals(listOf(), remainder.asSequence().toList())
         }
 
