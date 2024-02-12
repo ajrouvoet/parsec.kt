@@ -8,24 +8,36 @@ package parsec
  */
 sealed interface Result<C, out T> {
 
+    fun modifyConsumed(f: (Boolean) -> Boolean) = when (this) {
+        is Err -> copy(consumed = f(consumed))
+        is Ok  -> copy(consumed = f(consumed))
+    }
+
     data class Ok<C, T>
-        ( val remainder: Stream<C>
-        , val value: T
+        ( /** the remainder of the stream */
+          val remainder: Stream<C>,
+          /** whether any input was consumed */
+          val consumed: Boolean,
+          /** the result of parsing */
+          val value: T
         ): Result<C, T>
 
     data class Err<C>
-        ( val remainder: Stream<C>
-        , val message: String
+        ( val remainder: Stream<C>,
+          /** whether any input was consumed */
+          val consumed: Boolean,
+          /** the error message */
+          val message: String
         ): Result<C, Nothing>
 
 }
 
-fun <C, T, S> Result<C, T>.map(f: (T) -> S) = when (this) {
+fun <C, T, S> Result<C, T>.map(f: Result.Ok<C,T>.() -> S) = when (this) {
     is Result.Err -> this
-    is Result.Ok  -> Result.Ok(this.remainder, f(this.value))
+    is Result.Ok  -> Result.Ok(remainder, consumed, f())
 }
 
-fun <C, T, S> Result<C, T>.flatMap(f: (T, Stream<C>) -> Result<C, S>) = when (this) {
+fun <C, T, S> Result<C, T>.flatMap(f: Result.Ok<C,T>.() -> Result<C, S>) = when (this) {
     is Result.Err -> this
-    is Result.Ok  -> f(this.value, this.remainder)
+    is Result.Ok  -> f()
 }

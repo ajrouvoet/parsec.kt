@@ -1,5 +1,6 @@
 package parsec.parsec
 
+import org.junit.jupiter.api.Assertions.assertFalse
 import parsec.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -52,6 +53,15 @@ class ParsecTest {
     }
 
     @Test
+    fun `and consumes no input if left fails without consuming input`() {
+        val parser = tryOrRewind(exactly('a')) and exactly('a')
+
+        parser.expectError("ba") {
+            assertFalse(consumed)
+        }
+    }
+
+    @Test
     fun `exactly and exactly `() {
         val parser = exactly('x') and exactly('y')
 
@@ -99,12 +109,20 @@ class ParsecTest {
     }
 
     @Test
-    fun choose() {
+    fun `choose does not rewind`() {
         val parser = choice(exactly('a'), exactly('b'), exactly('c'))
 
         parser.expectParse("a")
-        parser.expectError("d") {
-            println(this)
-        }
+        parser.expectError("b")
+        parser.expectError("d")
+    }
+
+    @Test
+    fun `choose with try`() {
+        val parser = choice(tryOrRewind(exactly('a')), exactly('b'), exactly('c'))
+
+        parser.expectParse("a")
+        parser.expectParse("b")
+        parser.expectError("d")
     }
 }
