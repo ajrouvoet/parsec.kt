@@ -1,7 +1,9 @@
-package parsec
+package ajrouvoet.parsec
 
 import org.junit.jupiter.api.Assertions.assertFalse
-import parsec.*
+import ajrouvoet.parsec.*
+import arrow.core.Option
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -116,7 +118,6 @@ class ParsecTest {
         parser.expectParse("b")
         parser.expectError("d")
     }
-
     @Test
     fun `choose with try`() {
         val parser = choice(tryOrRewind(exactly('a')), exactly('b'), exactly('c'))
@@ -125,4 +126,21 @@ class ParsecTest {
         parser.expectParse("b")
         parser.expectError("d")
     }
+
+    @Test
+    fun `eagerness`() {
+        ((pure<Char, _>(Unit) or exactly('a').map {}) and eos())
+            .expectError("a") // unfortunately parser combinators are eager to accept a certain reading of input
+    }
+
+    @Test
+    fun `separated by`() {
+        (exactly('x').separatedBy(exactly(',')) and eos()).apply {
+            expectParse("x,x") // unfortunately parser combinators are eager to accept a certain reading of input
+            expectParse("x")
+            expectParse("")
+            expectError("x,")
+        }
+    }
+
 }

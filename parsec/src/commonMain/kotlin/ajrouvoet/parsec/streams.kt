@@ -1,4 +1,4 @@
-package parsec
+package ajrouvoet.parsec
 
 import arrow.core.*
 

@@ -1,4 +1,4 @@
-package parsec
+package ajrouvoet.parsec
 
 import arrow.core.*
 
@@ -12,6 +12,8 @@ import arrow.core.*
 fun interface Parsec<C, out T> {
     fun run(s: Stream<C>): Result<C, T>
 }
+
+operator fun <C,T> Parsec<C, T>.invoke(s: Stream<C>) = this.run(s)
 
 // We are going to define many parsers, but we are going to define them
 // in layers of abstraction.
@@ -62,7 +64,7 @@ fun <C> any() = Parsec<C, C> {
 /**
  * Functorial action
  */
-fun <C, T, S> Parsec<C,T>.map(f: (T) -> S) = Parsec { s ->
+fun <C, T, S> Parsec<C, T>.map(f: (T) -> S) = Parsec { s ->
     this@map
         .run(s)
         .map { f(value) }
@@ -71,7 +73,7 @@ fun <C, T, S> Parsec<C,T>.map(f: (T) -> S) = Parsec { s ->
 fun <C, T> Parsec<C, T>.mapError(onErr: (String) -> String): Parsec<C, T> = Parsec { s ->
     when (val res = this@mapError.run(s)) {
         is Result.Err -> res.copy(message = onErr(res.message))
-        is Result.Ok  -> res
+        is Result.Ok -> res
     }
 }
 
@@ -86,7 +88,7 @@ fun <C, S, T> Parsec<C, T>.collect(pred: (T) -> Either<String, S>): Parsec<C, S>
         }
 }
 
-fun <C, T> Parsec<C,T>.filter(onErr: (T) -> String, pred: (T) -> Boolean): Parsec<C, T> =
+fun <C, T> Parsec<C, T>.filter(onErr: (T) -> String, pred: (T) -> Boolean): Parsec<C, T> =
     collect { it: T ->
         if (pred(it)) it.right()
         else onErr(it).left()
@@ -95,7 +97,7 @@ fun <C, T> Parsec<C,T>.filter(onErr: (T) -> String, pred: (T) -> Boolean): Parse
 /**
  * Monadic action: value-dependent sequencing of parsers.
  */
-fun <C, T, S> Parsec<C,T>.flatMap(k: (T) -> Parsec<C, S>): Parsec<C, S> = Parsec { s ->
+fun <C, T, S> Parsec<C, T>.flatMap(k: (T) -> Parsec<C, S>): Parsec<C, S> = Parsec { s ->
     this@flatMap
         .run(s)
         .flatMap {
@@ -123,10 +125,10 @@ fun <C,T> tryOrRewind(p: Parsec<C, T>) = Parsec { s ->
  * branches manually to ensure that we do not backtrack after parsing fails at some
  * arbitrary depth of the left branch.
  */
-infix fun <C,T> Parsec<C,T>.or(that: Parsec<C,T>): Parsec<C,T> = Parsec { s ->
+infix fun <C,T> Parsec<C, T>.or(that: Parsec<C, T>): Parsec<C, T> = Parsec { s ->
     when (val res = this.run(s)) {
         is Result.Err -> if (res.consumed) res else that.run(s)
-        is Result.Ok  -> res
+        is Result.Ok -> res
     }
 }
 
@@ -164,7 +166,7 @@ fun <C, T> match(pred: (C) -> Either<String,T>): Parsec<C, T> =
  * If either fails, the produced parser fails.
  * If both succeed, then both their results are given.
  */
-infix fun <C,S,T> Parsec<C,S>.and(that: Parsec<C, T>): Parsec<C, Pair<S,T>> = Parsec { str ->
+infix fun <C,S,T> Parsec<C, S>.and(that: Parsec<C, T>): Parsec<C, Pair<S, T>> = Parsec { str ->
     this.run(str).flatMap {
         that.run(remainder).map {
             Pair(this@flatMap.value, this.value)
@@ -176,7 +178,7 @@ infix fun <C,S,T> Parsec<C,S>.and(that: Parsec<C, T>): Parsec<C, Pair<S,T>> = Pa
  * Parse [this] as many times as possible, until it fails.
  * The input consumed in the failing attempt will be rewinded.
  */
-fun <C,T> Parsec<C,T>.many(prepend: List<T> = listOf()): Parsec<C, List<T>> = this.optional.flatMap {
+fun <C,T> Parsec<C, T>.many(prepend: List<T> = listOf()): Parsec<C, List<T>> = this.optional.flatMap {
     when (it) {
         is None -> pure(prepend)
         is Some -> many(prepend + it.value)
@@ -187,23 +189,25 @@ fun <C,T> Parsec<C,T>.many(prepend: List<T> = listOf()): Parsec<C, List<T>> = th
  * Like [many], but parses [this] separated by [sep].
  */
 fun <C, S, T> Parsec<C, S>.separatedBy(sep: Parsec<C, T>): Parsec<C, List<S>> =
-    (( tryOrRewind(this * sep)
-     * delay { this.separatedBy(sep) }
-     ) .map { (hd, _, tl) -> hd.prependTo(tl) }
-    ) or (this .map { listOf(it) })
+    this.optional.flatMap {
+        when (val hd = it) {
+            is None -> pure(listOf())
+            is Some -> (sep skipAnd this).many().map { hd.value.prependTo(it) }
+        }
+    }
 
 /**
  * Parse [this] until [stop] succeeds.
  * If [this] fails, then the failure is propagated.
  */
-fun <C,S,T> Parsec<C,T>.until(end: Parsec<C, S>, prepend: List<T> = listOf()): Parsec<C, Pair<List<T>, S>> =
+fun <C,S,T> Parsec<C, T>.until(end: Parsec<C, S>, prepend: List<T> = listOf()): Parsec<C, Pair<List<T>, S>> =
     // first try to end it
     tryOrRewind(end.map { Pair(prepend, it) })
         // if that fails, we recover by parsing [this] once more and going again
         // TODO this is a deeply recursive function
         .or (this.flatMap { res -> until(end, prepend + res)})
 
-fun <C,T> Parsec<C,T>.repeat(n: Int, prepend: List<T> = listOf()): Parsec<C, List<T>> =
+fun <C,T> Parsec<C, T>.repeat(n: Int, prepend: List<T> = listOf()): Parsec<C, List<T>> =
     if (n == 0) pure(prepend)
     else this.flatMap { t -> this.repeat(n - 1, prepend + t) }
 
@@ -216,14 +220,14 @@ fun <C> exactly(tks: List<C>): Parsec<C, List<C>> = any<C>(tks.size)
 /**
  * Parser that sequences [this] [and] [that] but only keep the result of [that].
  */
-infix fun <C,S,T> Parsec<C,S>.skipAnd(that: Parsec<C, T>): Parsec<C, T> =
+infix fun <C,S,T> Parsec<C, S>.skipAnd(that: Parsec<C, T>): Parsec<C, T> =
     (this and that)
         .map { it.second }
 
 /**
  * Parser that sequences [this] [and] [that] but only keep the result of [this].
  */
-infix fun <C,S,T> Parsec<C,S>.andSkip(that: Parsec<C, T>) =
+infix fun <C,S,T> Parsec<C, S>.andSkip(that: Parsec<C, T>) =
     (this and that)
         .map { it.first }
 

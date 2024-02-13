@@ -1,7 +1,11 @@
 plugins {
     kotlin("multiplatform") version "1.9.22"
     application
+    `maven-publish`
 }
+
+group   = "ajrouvoet"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -36,12 +40,4 @@ kotlin {
 
 tasks.withType(Test::class) {
     useJUnitPlatform()
-}
-
-application {
-    mainClass.set("apoml.AppKt")
-}
-
-tasks.named<JavaExec>("run") {
-    standardInput = System.`in`
 }
