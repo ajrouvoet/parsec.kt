@@ -26,7 +26,8 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(kotlin("stdlib-common"))
-                implementation("io.arrow-kt:arrow-core:1.2.0")
+                implementation(libs.arrow)
+                implementation(libs.coroutines)
             }
         }
 

@@ -98,13 +98,12 @@ fun <C, T> Parsec<C, T>.filter(onErr: (T) -> String, pred: (T) -> Boolean): Pars
  * Monadic action: value-dependent sequencing of parsers.
  */
 fun <C, T, S> Parsec<C, T>.flatMap(k: (T) -> Parsec<C, S>): Parsec<C, S> = Parsec { s ->
-    this@flatMap
-        .run(s)
-        .flatMap {
-            k(value)
-                .run(remainder)
-                .modifyConsumed { it || consumed }
-        }
+    when (val res = this@flatMap.run(s)) {
+        is Result.Err -> res
+        is Result.Ok -> k(res.value)
+                .run(res.remainder)
+                .modifyConsumed { it || res.consumed }
+    }
 }
 
 /**
@@ -167,10 +166,13 @@ fun <C, T> match(pred: (C) -> Either<String,T>): Parsec<C, T> =
  * If both succeed, then both their results are given.
  */
 infix fun <C,S,T> Parsec<C, S>.and(that: Parsec<C, T>): Parsec<C, Pair<S, T>> = Parsec { str ->
-    this.run(str).flatMap {
-        that.run(remainder).map {
-            Pair(this@flatMap.value, this.value)
-        }
+    when (val res = this.run(str)) {
+        is Result.Err -> res
+        is Result.Ok ->
+            that.run(res.remainder).map {
+                Pair(res.value, this.value)
+            }
+
     }
 }
 
@@ -178,11 +180,34 @@ infix fun <C,S,T> Parsec<C, S>.and(that: Parsec<C, T>): Parsec<C, Pair<S, T>> = 
  * Parse [this] as many times as possible, until it fails.
  * The input consumed in the failing attempt will be rewinded.
  */
-fun <C,T> Parsec<C, T>.many(prepend: List<T> = listOf()): Parsec<C, List<T>> = this.optional.flatMap {
-    when (it) {
-        is None -> pure(prepend)
-        is Some -> many(prepend + it.value)
+fun <C,T> Parsec<C, T>.many(): Parsec<C, List<T>> = Parsec {
+    // This can be implemented compositionally as:
+    //
+    // this.optional.flatMap {
+    //     when (it) {
+    //         is None -> pure(prepend)
+    //         is Some -> many(prepend + it.value)
+    //     }
+    // }
+    //
+    // but the recursion depth of that implementation depends on the input.
+    // so we unwind the recursion here into a loop.
+    var remaining = it
+    var consumed = false
+    val results = mutableListOf<T>()
+
+    while (true) {
+        when (val res = this@many.run(remaining)) {
+            is Result.Err -> break
+            is Result.Ok -> {
+                consumed  = consumed || res.consumed
+                remaining = res.remainder
+                results.add(res.value)
+            }
+        }
     }
+
+    Result.Ok(remaining, consumed, results)
 }
 
 /**
@@ -200,12 +225,36 @@ fun <C, S, T> Parsec<C, S>.separatedBy(sep: Parsec<C, T>): Parsec<C, List<S>> =
  * Parse [this] until [stop] succeeds.
  * If [this] fails, then the failure is propagated.
  */
-fun <C,S,T> Parsec<C, T>.until(end: Parsec<C, S>, prepend: List<T> = listOf()): Parsec<C, Pair<List<T>, S>> =
-    // first try to end it
-    tryOrRewind(end.map { Pair(prepend, it) })
-        // if that fails, we recover by parsing [this] once more and going again
-        // TODO this is a deeply recursive function
-        .or (this.flatMap { res -> until(end, prepend + res)})
+fun <C,S,T> Parsec<C, T>.until(end: Parsec<C, S>) = Parsec<C, Pair<List<T>, S>> {
+    // See [many] implementation comment for an explanation why this is a primitive.
+    var remaining = it
+    var consumed = false
+    val results = mutableListOf<T>()
+
+    while (true) {
+        when (val res = end.run(remaining)) {
+            is Result.Err -> {} /* ignore */
+            is Result.Ok -> {
+                consumed  = consumed || res.consumed
+                remaining = res.remainder
+
+                return@Parsec Result.Ok(remaining, consumed, Pair(results, res.value))
+            }
+        }
+
+        when (val res = this@until.run(remaining)) {
+            is Result.Err -> return@Parsec res
+            is Result.Ok -> {
+                consumed  = consumed || res.consumed
+                remaining = res.remainder
+                results.add(res.value)
+            }
+        }
+    }
+
+    @Suppress("UNREACHABLE_CODE")
+    throw Error("Impossible exit")
+}
 
 fun <C,T> Parsec<C, T>.repeat(n: Int, prepend: List<T> = listOf()): Parsec<C, List<T>> =
     if (n == 0) pure(prepend)
