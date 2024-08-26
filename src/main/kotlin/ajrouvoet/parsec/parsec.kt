@@ -49,9 +49,9 @@ fun <C, T> delay(factory: () -> Parsec<C, T>) = Parsec { s ->
 /**
  * Specialization of [match] that matches the end of the stream.
  */
-fun <C> eos(): Parsec<C, Unit> = Parsec { s ->
+fun <C> eos(maxdebug: Int = 30): Parsec<C, Unit> = Parsec { s ->
     if (s.next().isNone()) Result.Ok(s, false, Unit)
-    else Result.Err(s, false, "Expected end of stream, still have: $s")
+    else Result.Err(s, false, "Expected end of stream, still have: ${s.asSequence().take(maxdebug).joinToString(", ")}")
 }
 
 fun <C> any() = Parsec<C, C> {
